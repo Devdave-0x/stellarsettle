@@ -1,0 +1,43 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "8787"
+      DATABASE_PATH: "/app/data/stellarsettle.sqlite"
+      # Override WEB_ORIGIN so CORS allows the frontend container.
+      WEB_ORIGIN: "http://localhost:5173"
+      # Inherit remaining optional vars from a local .env file when present.
+      STELLAR_NETWORK: "${STELLAR_NETWORK:-testnet}"
+      STELLAR_RPC_URL: "${STELLAR_RPC_URL:-https://soroban-testnet.stellar.org}"
+      STELLAR_CONTRACT_ID: "${STELLAR_CONTRACT_ID:-}"
+      POLL_INTERVAL_MS: "${POLL_INTERVAL_MS:-5000}"
+      METADATA_API_KEY: "${METADATA_API_KEY:-}"
+    volumes:
+      - sqlite_data:/app/data
+    ports:
+      - "8787:8787"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8787/api/health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_BACKEND_URL: "http://localhost:8787"
+      VITE_STELLAR_NETWORK: "${STELLAR_NETWORK:-testnet}"
+      VITE_STELLAR_RPC_URL: "${STELLAR_RPC_URL:-https://soroban-testnet.stellar.org}"
+      VITE_STELLAR_CONTRACT_ID: "${STELLAR_CONTRACT_ID:-}"
+    ports:
+      - "5173:5173"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  sqlite_data:
