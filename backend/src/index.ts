@@ -7,6 +7,7 @@ import Fastify, { FastifyRequest, FastifyReply } from "fastify";
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
+import type { ServerResponse } from "node:http";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { scValToNative, rpc, xdr } from "@stellar/stellar-sdk";
@@ -98,6 +99,8 @@ const app = Fastify({
   genReqId: (request) => request.headers["x-request-id"]?.toString() || randomUUID(),
 });
 const streams = new Set<(event: EscalationEvent) => void>();
+// Tracks the raw ServerResponse of every live SSE connection so onClose can drain them.
+const sseResponses = new Set<ServerResponse>();
 const rpcServer = new rpc.Server(config.STELLAR_RPC_URL);
 const checkpointStore = createCheckpointStore(database, config.STELLAR_NETWORK, config.STELLAR_CONTRACT_ID);
 const monitor = new EventMonitor({
@@ -554,10 +557,12 @@ app.get<{ Querystring: { types?: string } }>("/api/stream", async (request, repl
   const writeEvent = (event: ContractEvent) =>
     response.write(`id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
   streams.add(writeEvent);
+  sseResponses.add(response);
   const heartbeat = setInterval(() => response.write(": keepalive\n\n"), 20_000);
   request.raw.on("close", () => {
     clearInterval(heartbeat);
     streams.delete(writeEvent);
+    sseResponses.delete(response);
   });
 });
 
@@ -753,8 +758,28 @@ app.addHook("onClose", async () => {
   if (pollTimer) clearInterval(pollTimer);
   if (loanPollTimer) clearInterval(loanPollTimer);
   if (webhookTimer) clearInterval(webhookTimer);
+  // Send a final SSE comment then end each live connection so clients receive
+  // a clean EOF rather than an abrupt socket drop.
+  for (const res of sseResponses) {
+    try { res.end(": server shutting down\n\n"); } catch { /* already closed */ }
+  }
+  sseResponses.clear();
+  streams.clear();
   database.close();
+});
+
+// Trigger Fastify's close lifecycle (runs onClose hooks) on SIGTERM and SIGINT.
+async function shutdown(signal: string): Promise<void> {
+  app.log.info({ signal }, "Received shutdown signal; closing server");
+  try {
+    await app.close();
+  } catch (err) {
+    app.log.error({ err }, "Error during shutdown");
+    process.exitCode = 1;
+  }
 }
+process.once("SIGTERM", () => { void shutdown("SIGTERM"); });
+process.once("SIGINT",  () => { void shutdown("SIGINT"); });
 
 try {
   await app.listen({ host: config.HOST, port: config.PORT });

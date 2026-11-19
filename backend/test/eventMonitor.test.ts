@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { EventMonitor, type ContractEvent, type ScanCheckpoint } from "../src/eventMonitor.js";
+import { EventMonitor, RETRY_DEFAULTS, type ContractEvent, type ScanCheckpoint } from "../src/eventMonitor.js";
 import { createCheckpointStore } from "../src/scanCheckpoint.js";
 import { monitorConfig } from "../src/monitorConfig.js";
 
@@ -28,7 +28,8 @@ function fixture(overrides: Partial<Options> = {}) {
   const options: Options = {
     rpc, contractId: "contract", checkpoint: { lastScannedLedger: 100 }, maxPages: 1,
     process: (event) => { events.push(event); }, save: (state) => { saved.push(state); },
-    log: { info: () => {}, warn: (data) => { warnings.push(data); } }, ...overrides,
+    log: { info: () => {}, warn: (data) => { warnings.push(data); } },
+    retry: { maxAttempts: 1, baseDelayMs: 0 }, ...overrides,
   };
   return { monitor: new EventMonitor(options), options, requests, events, warnings, saved, health, pages };
 }
@@ -175,4 +176,43 @@ test("SQLite checkpoints survive restart, include empty ranges and isolate netwo
     database.close();
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("a transient getEvents error is retried and the poll cycle succeeds", async () => {
+  let calls = 0;
+  const f = fixture({
+    retry: { maxAttempts: 3, baseDelayMs: 0 },
+    rpc: {
+      getHealth: async () => ({ status: "healthy", oldestLedger: 1, latestLedger: 2500, ledgerRetentionWindow: 2500 }),
+      getEvents: async (request: unknown) => {
+        f.requests.push(request);
+        if (++calls === 1) throw new Error("transient network hiccup");
+        return { events: [] };
+      },
+    } as Options["rpc"],
+  });
+  await f.monitor.scan();
+  assert.equal(calls, 2, "first call failed, second succeeded");
+  assert.equal(f.warnings.length, 1);
+  assert.equal((f.warnings[0] as any).context, "getEvents");
+  assert.equal(f.monitor.lastScannedLedger, 1100);
+});
+
+test("getEvents errors are retried up to the cap then rethrown", async () => {
+  let calls = 0;
+  const f = fixture({
+    retry: { maxAttempts: 3, baseDelayMs: 0 },
+    rpc: {
+      getHealth: async () => ({ status: "healthy", oldestLedger: 1, latestLedger: 2500, ledgerRetentionWindow: 2500 }),
+      getEvents: async (request: unknown) => {
+        f.requests.push(request);
+        calls++;
+        throw new Error("persistent failure");
+      },
+    } as Options["rpc"],
+  });
+  await assert.rejects(f.monitor.scan(), /persistent failure/);
+  assert.equal(calls, 3, "must attempt exactly maxAttempts times");
+  assert.equal(f.warnings.length, 2, "each retry before the final throw is logged");
+  assert.equal(f.monitor.lastScannedLedger, 100, "checkpoint must not advance");
 });

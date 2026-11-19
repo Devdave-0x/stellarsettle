@@ -7,6 +7,31 @@ export type ScanCheckpoint = { lastScannedLedger?: number; retentionGap?: Retent
 type RpcClient = Pick<rpc.Server, "getHealth" | "getEvents">;
 type Logger = { info(data: object, message: string): void; warn(data: object, message: string): void };
 
+export const RETRY_DEFAULTS = { maxAttempts: 4, baseDelayMs: 250 };
+
+// Retries fn up to maxAttempts times with exponential backoff on any error.
+// The first attempt is attempt 1; retries start at attempt 2.
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  log: Logger,
+  context: string,
+  { maxAttempts, baseDelayMs } = RETRY_DEFAULTS,
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt >= maxAttempts) throw err;
+      const delayMs = baseDelayMs * 2 ** (attempt - 1);
+      log.warn(
+        { context, attempt, maxAttempts, delayMs, error: String(err) },
+        "Transient RPC error; retrying with backoff",
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 export class EventMonitor {
   private checkpoint: ScanCheckpoint;
   private range?: { start: number; end: number; cursor?: string };
@@ -24,6 +49,7 @@ export class EventMonitor {
     save: (checkpoint: ScanCheckpoint) => void;
     process: (event: ContractEvent) => void;
     log: Logger;
+    retry?: { maxAttempts: number; baseDelayMs: number };
   }) {
     this.checkpoint = { ...options.checkpoint };
   }
@@ -41,7 +67,11 @@ export class EventMonitor {
   // Each pass has a fixed page budget. Unfinished pagination continues on the
   // next timer tick; a restart safely replays the unfinished ledger chunk.
   async scan(): Promise<void> {
-    const health = await this.options.rpc.getHealth();
+    const retry = this.options.retry ?? RETRY_DEFAULTS;
+    const health = await withRetry(
+      () => this.options.rpc.getHealth(),
+      this.options.log, "getHealth", retry,
+    );
     const { oldestLedger, latestLedger } = health;
     if (health.status !== "healthy" || !Number.isSafeInteger(oldestLedger) ||
         !Number.isSafeInteger(latestLedger) || oldestLedger < 1 || latestLedger < oldestLedger) {
@@ -76,8 +106,8 @@ export class EventMonitor {
       this.range ??= { start: next, end: Math.min(next + 1000, latestLedger + 1) };
       const range = this.range;
       const page = range.cursor
-        ? await this.options.rpc.getEvents({ cursor: range.cursor, filters, limit: 100 })
-        : await this.options.rpc.getEvents({ startLedger: range.start, endLedger: range.end, filters, limit: 100 });
+        ? await withRetry(() => this.options.rpc.getEvents({ cursor: range.cursor, filters, limit: 100 }), this.options.log, "getEvents", retry)
+        : await withRetry(() => this.options.rpc.getEvents({ startLedger: range.start, endLedger: range.end, filters, limit: 100 }), this.options.log, "getEvents", retry);
       let reachedEnd = false;
       for (const event of page.events) {
         // Cursor requests cannot also carry endLedger. Stop at the captured
