@@ -6,6 +6,8 @@ extern crate std;
 mod fuzz_tests;
 #[path = "test_common.rs"]
 pub mod test_common;
+#[path = "test_flash_loan_guard.rs"]
+mod test_flash_loan_guard;
 #[path = "test_lending.rs"]
 mod test_lending;
 #[path = "test_liquidation.rs"]
