@@ -2,6 +2,7 @@ import "dotenv/config";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import swagger from "@fastify/swagger";
+import { registerSchemaValidation } from "./schemaValidation.js";
 import swaggerUi from "@fastify/swagger-ui";
 import Fastify, { FastifyRequest, FastifyReply } from "fastify";
 import { DatabaseSync } from "node:sqlite";
@@ -107,6 +108,7 @@ const app = Fastify({
   requestIdHeader: "x-request-id",
   genReqId: (request) => request.headers["x-request-id"]?.toString() || randomUUID(),
 });
+registerSchemaValidation(app);
 const streams = new Set<(event: EscalationEvent) => void>();
 // Tracks the raw ServerResponse of every live SSE connection so onClose can drain them.
 const sseResponses = new Set<ServerResponse>();
