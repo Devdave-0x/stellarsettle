@@ -21781,6 +21781,7 @@ mod test_pause_notice;
 mod test_expiry_extension;
 mod test_buyer_cap_collateral_merge;
 mod test_tier_max_value;
+mod test_valreb_mutual_preapproval;
 mod test_valreb_blacklist_appeal;
 mod test_valreb_finality_delay;
 mod test_valreb_dispute_evidence;
