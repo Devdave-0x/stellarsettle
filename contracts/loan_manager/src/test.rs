@@ -10,5 +10,7 @@ pub mod test_common;
 mod test_lending;
 #[path = "test_liquidation.rs"]
 mod test_liquidation;
+#[path = "test_loan_terms.rs"]
+mod test_loan_terms;
 #[path = "test_oracle.rs"]
 mod test_oracle;

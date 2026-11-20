@@ -21,7 +21,10 @@ mod storage;
 
 use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Env, Symbol, Vec};
 
-use crate::constants::{MAX_CONFIGURABLE_BONUS_BPS, MAX_LIQ_THRESHOLD_BPS};
+use crate::constants::{
+    MAX_CONFIGURABLE_BONUS_BPS, MAX_INTEREST_RATE_BPS, MAX_LIQ_THRESHOLD_BPS,
+    MAX_LOAN_DURATION_SECS,
+};
 use crate::liquidation::{compute_plan, proportional_shares, RepayMode};
 use crate::oracle::{resolve_price, twap_price};
 use crate::storage::{
@@ -260,6 +263,21 @@ impl LoanManagerContract {
             .publish((Symbol::new(&env, "liq_params_set"),), params);
     }
 
+    /// Set the borrow interest rate in bps, capped at `MAX_INTEREST_RATE_BPS`.
+    pub fn set_interest_rate(env: Env, admin: Address, rate_bps: u32) {
+        admin.require_auth();
+        assert_admin(&env, &admin);
+        if rate_bps > MAX_INTEREST_RATE_BPS {
+            panic!("interest rate above cap");
+        }
+        set(&env, DataKey::InterestRateBps, &rate_bps);
+    }
+
+    /// Current borrow interest rate in bps (0 when unset).
+    pub fn get_interest_rate(env: Env) -> u32 {
+        storage::get_opt(&env, &DataKey::InterestRateBps).unwrap_or(0)
+    }
+
     /// Emergency circuit breaker: halt all state-changing operations.
     pub fn pause(env: Env, admin: Address) {
         admin.require_auth();
@@ -398,6 +416,49 @@ impl LoanManagerContract {
 
         env.events()
             .publish((Symbol::new(&env, "borrowed"),), (user, amount));
+    }
+
+    /// Borrow with a fixed term; the loan falls due `duration_secs` from now.
+    pub fn borrow_with_term(env: Env, user: Address, amount: i128, duration_secs: u64) {
+        if duration_secs == 0 || duration_secs > MAX_LOAN_DURATION_SECS {
+            panic!("invalid loan duration");
+        }
+        Self::borrow(env.clone(), user.clone(), amount);
+        let due = env.ledger().timestamp() + duration_secs;
+        set(&env, DataKey::LoanDueDate(user), &due);
+    }
+
+    /// Admin: after a fixed-term loan's due date passes with debt still
+    /// outstanding, move all collateral to `treasury` and close the position.
+    pub fn seize_defaulted(env: Env, admin: Address, user: Address, treasury: Address) -> i128 {
+        admin.require_auth();
+        assert_admin(&env, &admin);
+        let due: u64 = storage::get_opt(&env, &DataKey::LoanDueDate(user.clone()))
+            .unwrap_or_else(|| panic!("no loan term"));
+        if env.ledger().timestamp() <= due {
+            panic!("loan not yet due");
+        }
+        let pos = get_position(&env, &user);
+        if pos.debt == 0 {
+            panic!("nothing to seize");
+        }
+        if pos.collateral > 0 {
+            collateral_token_client(&env).transfer(
+                &contract_address(&env),
+                &treasury,
+                &pos.collateral,
+            );
+        }
+        reduce_borrowed(&env, pos.debt);
+        socialize_bad_debt(&env, &user, pos.debt);
+        remove(&env, DataKey::Position(user.clone()));
+        remove(&env, DataKey::LoanDueDate(user.clone()));
+
+        env.events().publish(
+            (Symbol::new(&env, "collateral_seized"),),
+            (user, treasury, pos.collateral, pos.debt),
+        );
+        pos.collateral
     }
 
     /// Repay borrowed units (capped at the outstanding debt).

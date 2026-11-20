@@ -21744,6 +21744,7 @@ mod test_emergency_freeze;
 mod test_event_schema;
 mod test_fee_tier_recalc;
 mod test_multi_token;
+mod test_non_allowlisted_token;
 mod test_partial_cancellation;
 mod test_payout_currency_preference;
 mod test_proof_validation;
