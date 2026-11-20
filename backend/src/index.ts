@@ -15,6 +15,8 @@ import { z } from "zod";
 import { EventMonitor } from "./eventMonitor.js";
 import { createCheckpointStore } from "./scanCheckpoint.js";
 import { monitorConfig } from "./monitorConfig.js";
+import { findApiKey, initApiKeys, recordMetadataWrite } from "./apiKeys.js";
+import { recordPoll, recordRequest, renderMetrics } from "./metrics.js";
 
 /**
  * Make a read-only Soroban contract call via RPC simulation.
@@ -82,6 +84,7 @@ export function initDatabase(db: DatabaseSync): void {
 
 export const database = new DatabaseSync(databasePath);
 initDatabase(database);
+initApiKeys(database, config.METADATA_API_KEY);
 
 export type EscalationEvent = {
   id: string;
@@ -150,6 +153,7 @@ app.addHook("onRequest", async (request, reply) => {
 });
 
 app.addHook("onResponse", async (request, reply) => {
+  recordRequest(request.method, request.routeOptions.url ?? "unmatched", reply.statusCode, reply.elapsedTime);
   request.log.info({
     requestId: request.id,
     route: request.routeOptions.url,
@@ -157,6 +161,9 @@ app.addHook("onResponse", async (request, reply) => {
     durationMs: reply.elapsedTime,
   }, "Request completed");
 });
+
+app.get("/metrics", async (_request, reply) =>
+  reply.type("text/plain; version=0.0.4").send(renderMetrics()));
 
 app.get("/api/health", async () => ({
   status: "ok",
@@ -513,7 +520,8 @@ app.put<{ Params: { shipmentId: string; key: string }; Body: { value?: unknown }
     },
   },
   async (request, reply) => {
-    if (!config.METADATA_API_KEY || request.headers["x-api-key"] !== config.METADATA_API_KEY) {
+    const apiKeyName = findApiKey(database, request.headers["x-api-key"]);
+    if (!apiKeyName) {
       return reply.code(401).send({ error: "metadata_write_unauthorized" });
     }
     const params = validateParams(metadataKeyParamSchema, request.params, reply);
@@ -528,6 +536,7 @@ app.put<{ Params: { shipmentId: string; key: string }; Body: { value?: unknown }
          DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
       )
       .run(params.shipmentId, params.key, body.value);
+    recordMetadataWrite(database, params.shipmentId, params.key, apiKeyName);
     return reply.code(204).send();
   },
 );
@@ -637,7 +646,7 @@ app.get<{ Querystring: { withinLedgers?: string; nocache?: string } }>("/api/dea
 app.get<{ Querystring: { action?: string; fromLedger?: string; toLedger?: string; nocache?: string } }>(
   "/api/admin-log",
   async (request, reply) => {
-    if (!config.METADATA_API_KEY || request.headers["x-api-key"] !== config.METADATA_API_KEY) {
+    if (!findApiKey(database, request.headers["x-api-key"])) {
       return reply.code(401).send({ error: "admin_log_unauthorized" });
     }
     if (!config.STELLAR_CONTRACT_ID) {
@@ -746,8 +755,10 @@ async function scanEvents(): Promise<void> {
       }
     }
     lastScannedLedger = latest.sequence;
+    recordPoll(true);
   } catch (error) {
     rpcHealthy = false;
+    recordPoll(false);
     app.log.error({ err: error }, "contract event poll failed");
   } finally {
     pollRunning = false;
