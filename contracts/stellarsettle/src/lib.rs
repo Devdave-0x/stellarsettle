@@ -21754,6 +21754,7 @@ mod test_top_up_escrow;
 // Disabled: require a pre-built stellarsettle.wasm under target/wasm32v1-none/release.
 // mod test_upgrade;
 mod test_buyer_spending_limit;
+mod test_rdj_governance_timelock;
 mod test_rdj_governance_quorum;
 mod test_rdj_milestone_note_event;
 mod test_dispute_mediator;
