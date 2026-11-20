@@ -21727,6 +21727,7 @@ mod test_arbiter_security;
 mod test_boundary_validation;
 mod test_chaos;
 mod test_concurrent_disputes;
+mod test_dispute_rulings;
 mod test_escalation;
 mod test_features;
 mod test_issues;

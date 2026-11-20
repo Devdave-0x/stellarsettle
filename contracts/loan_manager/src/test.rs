@@ -14,3 +14,5 @@ mod test_lending;
 mod test_liquidation;
 #[path = "test_oracle.rs"]
 mod test_oracle;
+#[path = "test_partial_repay.rs"]
+mod test_partial_repay;
