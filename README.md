@@ -3187,6 +3187,10 @@ stellar contract invoke --id <CONTRACT_ID> \
 
 ---
 
+### Allowed Token List Enforcement (#220)
+
+The admin maintains an allowed token list (`add_allowed_token`, `get_allowed_tokens`) so spam tokens cannot be used as escrow collateral. When the list is non-empty, `create_shipment` panics with `token is not in the approved whitelist` for any token not on it; an empty list means all tokens are allowed. The rejection is covered by `contracts/stellarsettle/tests/test_fz_token_allowlist.rs`.
+
 ### Fee Holidays (#491)
 
 Admins can schedule a contract-wide **zero-fee window** measured in Stellar ledger sequence numbers. While a fee holiday is active, `deduct_fee*` returns the full gross amount for all shipments — no platform fee is charged to any party. A fee holiday is orthogonal to per-partner fee waivers and volume-based fee tiers: the holiday takes precedence while active regardless of other fee settings.
