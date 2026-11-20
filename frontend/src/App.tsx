@@ -155,17 +155,17 @@ function App() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`${backendUrl}/api/health`, { signal: controller.signal })
+    fetch(`${backendUrl}/v1/api/health`, { signal: controller.signal })
       .then((response) => {
         if (!response.ok) throw new Error("Backend unavailable");
         setApiState("online");
       })
       .catch(() => setApiState("offline"));
-    fetch(`${backendUrl}/api/events?limit=20`, { signal: controller.signal })
+    fetch(`${backendUrl}/v1/api/events?limit=20`, { signal: controller.signal })
       .then((response) => response.ok ? response.json() as Promise<Escalation[]> : [])
       .then((events) => setNotifications(events.map((e) => ({ ...e, read: false }))))
       .catch(() => undefined);
-    const stream = new EventSource(`${backendUrl}/api/stream`);
+    const stream = new EventSource(`${backendUrl}/v1/api/stream`);
     stream.addEventListener("dispute_escalated", (message) => {
       const event = JSON.parse((message as MessageEvent<string>).data) as Escalation;
       setNotifications((current) => [
@@ -587,7 +587,7 @@ function App() {
             <section className="panel activity-panel" id="activity">
               <div className="panel-heading">
                 <div><div className="section-kicker">NOTIFICATION CENTER</div><h2>Event monitor</h2></div>
-                <button className="icon-button refresh-button" title="Refresh notifications" onClick={() => fetch(`${backendUrl}/api/events?limit=20`).then((response) => response.json()).then((events: Escalation[]) => setNotifications(events.map((e) => ({ ...e, read: true })))).catch(() => setError("Could not refresh backend events."))}><RefreshCw size={16} /></button>
+                <button className="icon-button refresh-button" title="Refresh notifications" onClick={() => fetch(`${backendUrl}/v1/api/events?limit=20`).then((response) => response.json()).then((events: Escalation[]) => setNotifications(events.map((e) => ({ ...e, read: true })))).catch(() => setError("Could not refresh backend events."))}><RefreshCw size={16} /></button>
               </div>
               {notifications.length > 0 ? <>
                 {eventTypes.length > 1 && <div className="event-type-filters">

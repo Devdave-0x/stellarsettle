@@ -11,7 +11,9 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "test": "node --test --experimental-strip-types src/**/*.test.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "db:migrate": "node --experimental-strip-types src/migrate.ts up",
+    "db:rollback": "node --experimental-strip-types src/migrate.ts down"
   },
   "dependencies": {
     "@fastify/cors": "^11.4.2",

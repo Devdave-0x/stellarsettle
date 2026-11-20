@@ -8,7 +8,7 @@ export type ShipmentSearchResult = {
 };
 
 export async function searchShipments(query: string, signal?: AbortSignal): Promise<ShipmentSearchResult[]> {
-  const response = await fetch(`${backendUrl}/api/shipments/search?q=${encodeURIComponent(query)}&limit=10`, { signal });
+  const response = await fetch(`${backendUrl}/v1/api/shipments/search?q=${encodeURIComponent(query)}&limit=10`, { signal });
   if (!response.ok) throw new Error("Shipment search failed.");
   return response.json() as Promise<ShipmentSearchResult[]>;
 }

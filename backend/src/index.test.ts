@@ -244,7 +244,7 @@ describe("shipment completed and cancelled event decoders and handlers", () => {
 
     const response = await app.inject({
       method: "GET",
-      url: "/api/events",
+      url: "/v1/api/events",
     });
 
     assert.equal(response.statusCode, 200);
@@ -281,7 +281,7 @@ describe("shipment completed and cancelled event decoders and handlers", () => {
     // Verify type filtering on /api/events
     const completedOnlyRes = await app.inject({
       method: "GET",
-      url: "/api/events?type=shipment_completed",
+      url: "/v1/api/events?type=shipment_completed",
     });
     assert.equal(completedOnlyRes.statusCode, 200);
     assert.deepEqual(completedOnlyRes.json(), [
@@ -296,7 +296,7 @@ describe("shipment completed and cancelled event decoders and handlers", () => {
 
     const cancelledOnlyRes = await app.inject({
       method: "GET",
-      url: "/api/events?type=shipment_cancelled",
+      url: "/v1/api/events?type=shipment_cancelled",
     });
     assert.equal(cancelledOnlyRes.statusCode, 200);
     assert.deepEqual(cancelledOnlyRes.json(), [
