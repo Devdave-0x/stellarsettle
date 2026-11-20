@@ -12,6 +12,8 @@ mod test_flash_loan_guard;
 mod test_lending;
 #[path = "test_liquidation.rs"]
 mod test_liquidation;
+#[path = "test_loan_terms.rs"]
+mod test_loan_terms;
 #[path = "test_oracle.rs"]
 mod test_oracle;
 #[path = "test_partial_repay.rs"]

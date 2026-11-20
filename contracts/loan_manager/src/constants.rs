@@ -59,3 +59,9 @@ pub const MAX_LIQ_THRESHOLD_BPS: u32 = 9_500;
 /// Sanity ceiling for admin-configurable dynamic bonus (25%). The penalty
 /// cap still applies on top of this.
 pub const MAX_CONFIGURABLE_BONUS_BPS: u32 = 2_500;
+
+/// Ceiling for the admin-configurable borrow interest rate (50%).
+pub const MAX_INTEREST_RATE_BPS: u32 = 5_000;
+
+/// Longest loan term accepted by `borrow_with_term` (365 days).
+pub const MAX_LOAN_DURATION_SECS: u64 = 365 * 24 * 60 * 60;
