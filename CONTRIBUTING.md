@@ -9,6 +9,7 @@ Thank you for your interest in contributing to StellarSettle! This guide covers 
 - [Code Style & Formatting](#code-style--formatting)
 - [Pre-commit Hooks](#pre-commit-hooks)
 - [Making Changes](#making-changes)
+- [Issue Labels & Triage](#issue-labels--triage)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -277,6 +278,44 @@ Closes #123
 
 ---
 
+## Issue Labels & Triage
+
+We use a small set of `area:*` labels to route issues to the right part of the codebase, plus priority labels to help contributors pick work that matters most.
+
+### Area Labels
+
+| Label | Description | Covers |
+| --- | --- | --- |
+| `area:contracts` | Soroban smart contracts (Rust) | `contracts/` — settlement logic, validation, on-chain state |
+| `area:backend` | Backend API and services (Rust) | `backend/` — REST API, database, Stellar RPC integration |
+| `area:frontend` | Web UI (TypeScript/Next.js) | `frontend/` — settlement UI, wallet integration, components |
+| `area:devops` | Build, CI, and infrastructure | `Makefile`, `.github/workflows/`, Docker, pre-commit, tooling |
+
+### Priority Labels
+
+| Label | Meaning |
+| --- | --- |
+| `priority:high` | Blocking a release or breaking core flows; pick up first |
+| `priority:medium` | Important but not urgent; normal queue |
+| `priority:low` | Nice-to-have, cleanup, or exploratory work |
+
+### How Triage Works (Maintainers)
+
+1. **Assign exactly one `area:*` label** based on the package the change primarily touches. If an issue spans packages, pick the primary area and mention the others in the issue body.
+2. **Assign one `priority:*` label** using the definitions above. Default to `priority:medium` when unsure.
+3. **Keep the default GitHub labels** (`bug`, `enhancement`, `documentation`, `good first issue`, `help wanted`) alongside the area/priority labels — they describe the *kind* of work, not the location.
+4. **Re-triage on scope changes** — if an issue grows beyond its original area, update the labels and note the change in a comment.
+
+> **Note for maintainers:** The `area:*` and `priority:*` labels must be created in the GitHub repository (Settings → Labels, or via the GitHub API) with the descriptions above before they can be applied to issues.
+
+### Finding Work (Contributors)
+
+- Filter by area to match your background: `label:"area:contracts"` for Rust/Soroban work, `label:"area:backend"` for Rust API work, `label:"area:frontend"` for TypeScript/Next.js work, and `label:"area:devops"` for tooling and CI.
+- Combine with `label:"good first issue"` to find starter tasks.
+- New to the project? See **[docs/GOOD_FIRST_ISSUES.md](docs/GOOD_FIRST_ISSUES.md)** for a guide to picking your first issue based on whether you're more comfortable with Rust or TypeScript.
+
+---
+
 ## Troubleshooting
 
 ### Dependencies Missing
@@ -334,6 +373,7 @@ See [Pre-commit Hooks Troubleshooting](#troubleshooting-pre-commit) above.
 ## Questions?
 
 - Check the troubleshooting guide above
+- New to the project? Start with [docs/GOOD_FIRST_ISSUES.md](docs/GOOD_FIRST_ISSUES.md)
 - Read the specific README files:
   - `backend/README.md` - Backend setup
   - `frontend/README.md` - Frontend setup

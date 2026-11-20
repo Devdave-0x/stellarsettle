@@ -1,5 +1,7 @@
 # StellarSettle Monorepo
-![CI](https://github.com/shakurJJ/stellarsettle-contract/actions/workflows/ci.yml/badge.svg)
+[![CI](https://github.com/shakurJJ/stellarsettle-contract/actions/workflows/ci.yml/badge.svg)](https://github.com/shakurJJ/stellarsettle-contract/actions/workflows/ci.yml)
+[![Backend CI](https://github.com/shakurJJ/stellarsettle-contract/actions/workflows/backend.yml/badge.svg)](https://github.com/shakurJJ/stellarsettle-contract/actions/workflows/backend.yml)
+[![Frontend CI](https://github.com/shakurJJ/stellarsettle-contract/actions/workflows/frontend.yml/badge.svg)](https://github.com/shakurJJ/stellarsettle-contract/actions/workflows/frontend.yml)
 ![codecov](https://codecov.io/gh/shakurJJ/stellarsettle-contract/branch/main/graph/badge.svg)
 ....
 > **Milestone-based supply chain escrow on Stellar Soroban**
