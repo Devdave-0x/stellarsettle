@@ -1841,6 +1841,9 @@ const RECOVERY_THRESHOLD_LEDGERS: u32 = constants::RECOVERY_THRESHOLD_LEDGERS;
 /// Max notes retained per milestone (oldest dropped on overflow).
 const MAX_MILESTONE_NOTES: u32 = 10;
 
+/// Max length (bytes) of a single milestone note.
+const MAX_MILESTONE_NOTE_LEN: u32 = 256;
+
 // ============================================================
 // CONTRACT
 // ============================================================
@@ -16539,6 +16542,9 @@ impl StellarSettleContract {
         if milestone_index as usize >= shipment.milestones.len() as usize {
             panic!("invalid milestone index");
         }
+        if note.len() > MAX_MILESTONE_NOTE_LEN {
+            panic!("note too long");
+        }
 
         let key = DataKeyExt::MilestoneNotes(shipment_id.clone(), milestone_index);
         let mut notes: Vec<MilestoneNote> = env
@@ -21712,6 +21718,7 @@ mod test_common;
 mod test_correct_proof;
 mod test_extend_shipment_ttl;
 mod test_feat_four;
+mod test_milestone_edge_cases;
 mod test_new_features;
 mod test_operation_pause;
 
