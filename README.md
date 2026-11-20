@@ -76,6 +76,19 @@ Buyer confirms → final 25% released → Shipment Completed ✓
 If buyer disputes any proof → milestone frozen → Arbiter resolves
 ```
 
+### Demo Walkthrough
+
+The clip below shows the full happy path in the current dashboard: the buyer
+creates a shipment and locks USDC in escrow, the supplier submits proof for a
+milestone, and the buyer confirms it so the milestone payment is released.
+
+![StellarSettle demo: create shipment, submit proof, confirm milestone](docs/assets/demo-flow.gif)
+
+> The recording is captured from the current `frontend` dashboard (Freighter
+> wallet connected to testnet). If the UI changes, re-record the flow and
+> replace `docs/assets/demo-flow.gif` so this walkthrough never drifts from the
+> shipped interface.
+
 The contract is deployed once. Multiple independent shipments can be
 created by different buyers using the same contract.
 

@@ -130,6 +130,79 @@ fn test_rebalance_rejected_when_sum_not_100() {
 }
 
 #[test]
+#[should_panic(expected = "milestone percentages must sum to 100")]
+fn test_rebalance_rejected_when_unequal_weights_do_not_sum_to_100() {
+    let t = setup();
+    let client = StellarSettleContractClient::new(&t.env, &t.contract_id);
+    let ship_id = sid(&t.env, "ship1");
+    create_standard_shipment(
+        &client,
+        &t.env,
+        &ship_id,
+        &t.buyer,
+        &t.supplier,
+        &t.logistics,
+        &t.arbiter,
+        &t.token_id,
+        1_000_000,
+    );
+
+    // Unequal weights that total 110 instead of 100.
+    let new_percents = vec![&t.env, 50u32, 50u32, 10u32];
+    client.rebalance_milestones(&t.buyer, &ship_id, &new_percents);
+}
+
+#[test]
+fn test_rebalance_single_milestone_shipment() {
+    let t = setup();
+    let client = StellarSettleContractClient::new(&t.env, &t.contract_id);
+    let ship_id = sid(&t.env, "ship1");
+    create_standard_shipment(
+        &client,
+        &t.env,
+        &ship_id,
+        &t.buyer,
+        &t.supplier,
+        &t.logistics,
+        &t.arbiter,
+        &t.token_id,
+        1_000_000,
+    );
+
+    let new_percents = vec![&t.env, 100u32];
+    client.rebalance_milestones(&t.buyer, &ship_id, &new_percents);
+
+    let shipment = client.get_shipment(&ship_id);
+    assert_eq!(shipment.milestones.len(), 1);
+    assert_eq!(shipment.milestones.get(0).unwrap().payment_percent, 100);
+}
+
+#[test]
+#[should_panic(expected = "cannot rebalance: at least one milestone is no longer pending")]
+fn test_rebalance_rejected_after_milestone_released() {
+    let t = setup();
+    let client = StellarSettleContractClient::new(&t.env, &t.contract_id);
+    let ship_id = sid(&t.env, "ship1");
+    create_standard_shipment(
+        &client,
+        &t.env,
+        &ship_id,
+        &t.buyer,
+        &t.supplier,
+        &t.logistics,
+        &t.arbiter,
+        &t.token_id,
+        1_000_000,
+    );
+
+    // Confirm milestone 0 so it is no longer pending.
+    client.confirm_milestone(&t.buyer, &ship_id, &0u32);
+
+    let new_percents = vec![&t.env, 10u32, 10u32, 80u32];
+    client.rebalance_milestones(&t.buyer, &ship_id, &new_percents);
+}
+
+#[test]
 #[should_panic(expected = "unauthorized")]
 fn test_rebalance_rejected_for_non_buyer_caller() {
     let t = setup();
