@@ -15,8 +15,9 @@ import { z } from "zod";
 import { EventMonitor } from "./eventMonitor.js";
 import { createCheckpointStore } from "./scanCheckpoint.js";
 import { monitorConfig } from "./monitorConfig.js";
-import { findApiKey, initApiKeys, recordMetadataWrite } from "./apiKeys.js";
-import { recordPoll, recordRequest, renderMetrics } from "./metrics.js";
+import { inc, observeRequestDuration, renderMetrics } from "./metrics.js";
+import { globalAgent as httpAgent } from "node:http";
+import { globalAgent as httpsAgent } from "node:https";
 
 /**
  * Make a read-only Soroban contract call via RPC simulation.
@@ -29,8 +30,13 @@ import { recordPoll, recordRequest, renderMetrics } from "./metrics.js";
  * @returns       Decoded native JS value from the contract's return ScVal
  */
 async function readContract<T = unknown>(method: string, args: Record<string, unknown> = {}): Promise<T> {
-  const { result } = await rpcServer.queryContract(config.STELLAR_CONTRACT_ID, method, args);
-  return result as T;
+  try {
+    const { result } = await rpcServer.queryContract(config.STELLAR_CONTRACT_ID, method, args);
+    return result as T;
+  } catch (error) {
+    inc("rpc_errors_total");
+    throw error;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -104,6 +110,10 @@ const app = Fastify({
 const streams = new Set<(event: EscalationEvent) => void>();
 // Tracks the raw ServerResponse of every live SSE connection so onClose can drain them.
 const sseResponses = new Set<ServerResponse>();
+// Bound concurrent sockets to the RPC endpoint; keep-alive reuses them (see BACKEND_CONFIG.md).
+const rpcMaxSockets = Number(process.env.RPC_MAX_SOCKETS ?? 10);
+httpAgent.maxSockets = rpcMaxSockets;
+httpsAgent.maxSockets = rpcMaxSockets;
 const rpcServer = new rpc.Server(config.STELLAR_RPC_URL);
 const checkpointStore = createCheckpointStore(database, config.STELLAR_NETWORK, config.STELLAR_CONTRACT_ID);
 const monitor = new EventMonitor({
@@ -117,6 +127,8 @@ const monitor = new EventMonitor({
   log: app.log,
   process: (event) => {
     const topics = event.topic.map((topic) => decodeScVal(topic));
+    if (topics[0] === "shipment_created") inc("shipments_total");
+    if (topics[0] === "milestone_confirmed") inc("milestones_confirmed_total");
     if (topics[0] !== "dispute_escalated") return;
     const payload = decodeScVal(event.value);
     if (!Array.isArray(payload) || payload.length < 3) return;
@@ -160,6 +172,12 @@ app.addHook("onResponse", async (request, reply) => {
     statusCode: reply.statusCode,
     durationMs: reply.elapsedTime,
   }, "Request completed");
+  observeRequestDuration(reply.elapsedTime / 1000);
+});
+
+app.get("/metrics", async (_request, reply) => {
+  reply.type("text/plain; version=0.0.4");
+  return renderMetrics();
 });
 
 app.get("/metrics", async (_request, reply) =>
@@ -758,7 +776,7 @@ async function scanEvents(): Promise<void> {
     recordPoll(true);
   } catch (error) {
     rpcHealthy = false;
-    recordPoll(false);
+    inc("rpc_errors_total");
     app.log.error({ err: error }, "contract event poll failed");
   } finally {
     pollRunning = false;
@@ -782,6 +800,8 @@ app.addHook("onClose", async () => {
 // Trigger Fastify's close lifecycle (runs onClose hooks) on SIGTERM and SIGINT.
 async function shutdown(signal: string): Promise<void> {
   app.log.info({ signal }, "Received shutdown signal; closing server");
+  // Give in-flight requests up to 10 s to finish before forcing exit.
+  setTimeout(() => process.exit(1), 10_000).unref();
   try {
     await app.close();
   } catch (err) {

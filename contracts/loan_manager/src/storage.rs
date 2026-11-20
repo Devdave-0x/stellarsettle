@@ -132,6 +132,10 @@ pub enum DataKey {
     LiqParams,
     /// Count of times the failover chain fell through to TWAP (diagnostics).
     TwapFallbackCount,
+    /// Admin-configured borrow interest rate in bps.
+    InterestRateBps,
+    /// Due timestamp of a borrower's fixed-term loan.
+    LoanDueDate(Address),
 }
 
 // ============================================================
