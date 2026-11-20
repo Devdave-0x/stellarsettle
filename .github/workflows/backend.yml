@@ -36,6 +36,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Run migrations
+        run: npm run db:migrate
+
       - name: Test
         run: npm test
 

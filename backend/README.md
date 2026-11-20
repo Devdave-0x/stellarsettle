@@ -57,17 +57,30 @@ Retention is obtained from the RPC's [`getHealth` ledger window](https://develop
 
 To recover a reported gap, use an RPC provider that still retains the required range and set `BACKFILL_FROM_LEDGER` to its first missing ledger, then restart. Checkpoint scope deliberately excludes the RPC URL so changing providers preserves progress. Remove the override after recovery. The historical gap warning remains available for operator audit even after an explicit replay; inspect recovery logs and stored events to verify that replay. If no provider retains the range, an external archival source is required; this service does not fabricate or silently mark that history as recovered.
 
+## Database migrations
+
+Schema changes live in `migrations/` as `NNN_name.up.sql` / `NNN_name.down.sql` pairs. Applied migrations are tracked in the `schema_migrations` table of the database at `DATABASE_PATH`.
+
+```sh
+npm run db:migrate    # apply all pending migrations
+npm run db:rollback   # revert the most recently applied migration
+```
+
+To add a migration, create the next-numbered `.up.sql` and matching `.down.sql` file.
+
 ## API Endpoints
+
+All API routes are versioned under `/v1` (e.g. `GET /v1/api/health`). Contract state reads are cached in memory for `CONTRACT_CACHE_TTL_MS` (default `5000`).
 
 ## Environment variables
 
-- **GET /api/health** — Check service status, network, and event monitor state
-- **GET /api/events** — Retrieve paginated `dispute_escalated`, `shipment_completed`, and `shipment_cancelled` events (query params: `after` ledger, `limit` max 100, optional `type` and `shipmentId`)
-- **GET /api/stream** — Server-Sent Events stream of contract events (SSE)
+- **GET /v1/api/health** — Check service status, network, and event monitor state
+- **GET /v1/api/events** — Retrieve paginated `dispute_escalated`, `shipment_completed`, and `shipment_cancelled` events (query params: `after` ledger, `limit` max 100, optional `type` and `shipmentId`)
+- **GET /v1/api/stream** — Server-Sent Events stream of contract events (SSE)
 
 ### Stats
 
-- **GET /api/stats** — Contract-wide aggregate metrics for dashboard/landing widgets (#56)
+- **GET /v1/api/stats** — Contract-wide aggregate metrics for dashboard/landing widgets (#56)
   - Returns: `{ totalShipments, totalVolume, totalDisputes, completedShipments, totalEscrowed?, fetchedAt }`
   - `totalVolume` is returned as a string to preserve i128 precision (stroops)
   - `totalEscrowed` is included only when `STELLAR_STATS_TOKEN` env var is set to a token SAC address
@@ -129,7 +142,7 @@ status, timestamps, dispute configuration, etc.).
 
 ---
 
-- **GET /api/shipments/:id/warranty** — Retrieve warranty status and any filed claim for a shipment
+- **GET /v1/api/shipments/:id/warranty** — Retrieve warranty status and any filed claim for a shipment
   - Response: `{ warrantyEndLedger: number | null, balance: string | null, claim: WarrantyClaim | null }`
   - `claim` is `null` when no warranty claim has been filed for the shipment
   - Returns 404 if shipment ID not found
@@ -159,21 +172,21 @@ writer, move each writer over, then run `revoke legacy` and remove `METADATA_API
 
 ### Templates
 
-- **GET /api/templates** — List saved milestone templates from the contract
+- **GET /v1/api/templates** — List saved milestone templates from the contract
   - Query params: `owner` (optional Stellar address to filter by owner), `nocache` (any value bypasses cache)
   - Returns: `{ templates: MilestoneTemplate[] }` sorted in stable contract order
   - Proxies contract's `list_milestone_templates` function
 
 ### Deadlines
 
-- **GET /api/deadlines/upcoming** — List milestones approaching their deadline
+- **GET /v1/api/deadlines/upcoming** — List milestones approaching their deadline
   - Query params: `withinLedgers` (default 200), `nocache` (any value bypasses cache)
   - Returns: `{ withinLedgers: number, milestones: MilestoneDeadline[] }` sorted by nearest deadline first
   - Proxies contract's `get_upcoming_deadlines` and annotates results with `check_deadline_warning`
 
 ### Admin Log
 
-- **GET /api/admin-log** — Retrieve the on-chain admin action audit log (requires `X-API-Key` header)
+- **GET /v1/api/admin-log** — Retrieve the on-chain admin action audit log (requires `X-API-Key` header)
   - Query params: `action` (optional action type filter), `fromLedger` (optional), `toLedger` (optional), `nocache` (any value bypasses cache)
   - Returns: `{ entries: AdminAction[], filters: { action, fromLedger, toLedger } }`
   - Requires an active API key, the same as metadata writes
