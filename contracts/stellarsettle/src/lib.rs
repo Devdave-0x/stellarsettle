@@ -21754,6 +21754,7 @@ mod test_supplier_tiering;
 // mod test_upgrade_multisig;
 mod test_jurisdiction_tag;
 mod test_max_allowed_tokens;
+mod test_allowlist_admin;
 mod test_fee_waiver;
 mod test_payout_preview;
 mod test_quality_grades;
