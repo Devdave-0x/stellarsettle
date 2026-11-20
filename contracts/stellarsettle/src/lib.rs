@@ -1841,6 +1841,9 @@ const RECOVERY_THRESHOLD_LEDGERS: u32 = constants::RECOVERY_THRESHOLD_LEDGERS;
 /// Max notes retained per milestone (oldest dropped on overflow).
 const MAX_MILESTONE_NOTES: u32 = 10;
 
+/// Max length (bytes) of a single milestone note.
+const MAX_MILESTONE_NOTE_LEN: u32 = 256;
+
 // ============================================================
 // CONTRACT
 // ============================================================
@@ -16539,6 +16542,9 @@ impl StellarSettleContract {
         if milestone_index as usize >= shipment.milestones.len() as usize {
             panic!("invalid milestone index");
         }
+        if note.len() > MAX_MILESTONE_NOTE_LEN {
+            panic!("note too long");
+        }
 
         let key = DataKeyExt::MilestoneNotes(shipment_id.clone(), milestone_index);
         let mut notes: Vec<MilestoneNote> = env
@@ -21712,6 +21718,7 @@ mod test_common;
 mod test_correct_proof;
 mod test_extend_shipment_ttl;
 mod test_feat_four;
+mod test_milestone_edge_cases;
 mod test_new_features;
 mod test_operation_pause;
 
@@ -21727,6 +21734,7 @@ mod test_arbiter_security;
 mod test_boundary_validation;
 mod test_chaos;
 mod test_concurrent_disputes;
+mod test_dispute_rulings;
 mod test_escalation;
 mod test_features;
 mod test_issues;
@@ -21744,6 +21752,7 @@ mod test_emergency_freeze;
 mod test_event_schema;
 mod test_fee_tier_recalc;
 mod test_multi_token;
+mod test_non_allowlisted_token;
 mod test_partial_cancellation;
 mod test_payout_currency_preference;
 mod test_proof_validation;
@@ -21754,6 +21763,7 @@ mod test_supplier_tiering;
 // mod test_upgrade_multisig;
 mod test_jurisdiction_tag;
 mod test_max_allowed_tokens;
+mod test_allowlist_admin;
 mod test_fee_waiver;
 mod test_payout_preview;
 mod test_quality_grades;
@@ -21777,6 +21787,7 @@ mod test_feat_earnings;
 mod test_slash_collateral;
 mod test_shipment_cost_estimate;
 mod test_granular_roles;
+mod test_milestone_order_and_refund;
 // Disabled: exercises milestone insurance holdback / oracle price-condition
 // APIs (see NEW_MILESTONE_FEATURES.md) that have not been implemented yet.
 // mod test_milestone_insurance_and_oracle;
