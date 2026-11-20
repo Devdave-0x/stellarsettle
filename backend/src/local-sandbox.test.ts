@@ -75,7 +75,7 @@ test("event polling indexes a local Soroban sandbox event", async () => {
     throw new Error("Fastify did not start on a listening port.");
   }
 
-  const res = await fetch(`http://127.0.0.1:${port}/api/events`);
+  const res = await fetch(`http://127.0.0.1:${port}/v1/api/events`);
   const body = await res.json();
 
   if (!Array.isArray(body)) {

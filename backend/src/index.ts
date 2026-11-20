@@ -15,6 +15,7 @@ import { z } from "zod";
 import { EventMonitor } from "./eventMonitor.js";
 import { createCheckpointStore } from "./scanCheckpoint.js";
 import { monitorConfig } from "./monitorConfig.js";
+import { ContractCache } from "./contractCache.js";
 
 /**
  * Make a read-only Soroban contract call via RPC simulation.
@@ -50,6 +51,7 @@ const envSchema = z.object({
   RATE_LIMIT_READ_MAX: z.coerce.number().int().positive().default(100),
   RATE_LIMIT_WRITE_MAX: z.coerce.number().int().positive().default(30),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
+  CONTRACT_CACHE_TTL_MS: z.coerce.number().int().nonnegative().default(5_000),
 });
 
 const config = envSchema.parse(process.env);
@@ -102,6 +104,7 @@ const streams = new Set<(event: EscalationEvent) => void>();
 // Tracks the raw ServerResponse of every live SSE connection so onClose can drain them.
 const sseResponses = new Set<ServerResponse>();
 const rpcServer = new rpc.Server(config.STELLAR_RPC_URL);
+const contractCache = new ContractCache(config.CONTRACT_CACHE_TTL_MS, app.log);
 const checkpointStore = createCheckpointStore(database, config.STELLAR_NETWORK, config.STELLAR_CONTRACT_ID);
 const monitor = new EventMonitor({
   rpc: rpcServer,
@@ -158,7 +161,7 @@ app.addHook("onResponse", async (request, reply) => {
   }, "Request completed");
 });
 
-app.get("/api/health", async () => ({
+app.get("/v1/api/health", async () => ({
   status: "ok",
   network: config.STELLAR_NETWORK,
   contractConfigured: Boolean(config.STELLAR_CONTRACT_ID),
@@ -168,7 +171,7 @@ app.get("/api/health", async () => ({
 }));
 
 // #52: GET /api/shipments/:id/fees endpoint (must come before /api/shipments to avoid route collision)
-app.get<{ Params: { shipmentId: string } }>("/api/shipments/:shipmentId/fees", async (request, reply) => {
+app.get<{ Params: { shipmentId: string } }>("/v1/api/shipments/:shipmentId/fees", async (request, reply) => {
   if (!config.STELLAR_CONTRACT_ID) {
     return reply.code(503).send({ error: "contract_not_configured" });
   }
@@ -197,7 +200,7 @@ app.get<{ Params: { shipmentId: string } }>("/api/shipments/:shipmentId/fees", a
 
 // #49: Role-indexed shipment list endpoints
 app.get<{ Querystring: { role?: string; address?: string; cursor?: string; limit?: string; tag?: string } }>(
-  "/api/shipments",
+  "/v1/api/shipments",
   async (request, reply) => {
     if (!config.STELLAR_CONTRACT_ID) {
       return reply.code(503).send({ error: "contract_not_configured" });
@@ -255,7 +258,7 @@ app.get<{ Querystring: { role?: string; address?: string; cursor?: string; limit
   }
 );
 
-app.get<{ Querystring: { after?: string; limit?: string } }>("/api/events", async (request) => {
+app.get<{ Querystring: { after?: string; limit?: string } }>("/v1/api/events", async (request) => {
   const after = Math.max(0, Number(request.query.after ?? 0) || 0);
   const limit = Math.min(100, Math.max(1, Number(request.query.limit ?? 50) || 50));
   const rows = database.prepare(`
@@ -268,7 +271,7 @@ app.get<{ Querystring: { after?: string; limit?: string } }>("/api/events", asyn
 // ---------------------------------------------------------------------------
 // Issue #74 – Loan manager event indexer endpoint
 // ---------------------------------------------------------------------------
-app.get<{ Querystring: { after?: string; limit?: string } }>("/api/loan-events", async (request) => {
+app.get<{ Querystring: { after?: string; limit?: string } }>("/v1/api/loan-events", async (request) => {
   const after = Math.max(0, Number(request.query.after ?? 0) || 0);
   const limit = Math.min(100, Math.max(1, Number(request.query.limit ?? 50) || 50));
   const rows = database.prepare(`
@@ -278,7 +281,7 @@ app.get<{ Querystring: { after?: string; limit?: string } }>("/api/loan-events",
   return rows.map((row) => JSON.parse(row.payload));
 });
 
-app.get<{ Querystring: { after?: string; limit?: string } }>("/api/shipments", async (request, reply) => {
+app.get<{ Querystring: { after?: string; limit?: string } }>("/v1/api/shipments", async (request, reply) => {
   if (!config.STELLAR_CONTRACT_ID) {
     return reply.code(503).send({ error: "contract_not_configured" });
   }
@@ -312,7 +315,7 @@ await app.register(swaggerUi, {
 // ---------------------------------------------------------------------------
 
 app.get(
-  "/api/health",
+  "/v1/api/health",
   {
     config: { rateLimit: { max: config.RATE_LIMIT_READ_MAX, timeWindow: config.RATE_LIMIT_WINDOW_MS } },
     schema: {
@@ -342,7 +345,7 @@ app.get(
 );
 
 app.get<{ Querystring: { after?: string; limit?: string } }>(
-  "/api/events",
+  "/v1/api/events",
   {
     config: { rateLimit: { max: config.RATE_LIMIT_READ_MAX, timeWindow: config.RATE_LIMIT_WINDOW_MS } },
     schema: {
@@ -379,7 +382,7 @@ app.get<{ Querystring: { after?: string; limit?: string } }>(
 );
 
 app.get<{ Querystring: { after?: string; limit?: string } }>(
-  "/api/shipments",
+  "/v1/api/shipments",
   {
     config: { rateLimit: { max: config.RATE_LIMIT_READ_MAX, timeWindow: config.RATE_LIMIT_WINDOW_MS } },
     schema: {
@@ -413,7 +416,7 @@ app.get<{ Querystring: { after?: string; limit?: string } }>(
   }
 });
 
-app.get<{ Params: { id: string } }>("/api/shipments/:id/milestones", async (request, reply) => {
+app.get<{ Params: { id: string } }>("/v1/api/shipments/:id/milestones", async (request, reply) => {
   if (!config.STELLAR_CONTRACT_ID) {
     return reply.code(503).send({ error: "contract_not_configured" });
   }
@@ -432,7 +435,7 @@ app.get<{ Params: { id: string } }>("/api/shipments/:id/milestones", async (requ
   }
 });
 
-app.get<{ Params: { id: string } }>("/api/shipments/:id/warranty", async (request, reply) => {
+app.get<{ Params: { id: string } }>("/v1/api/shipments/:id/warranty", async (request, reply) => {
   if (!config.STELLAR_CONTRACT_ID) {
     return reply.code(503).send({ error: "contract_not_configured" });
   }
@@ -460,7 +463,7 @@ app.get<{ Params: { id: string } }>("/api/shipments/:id/warranty", async (reques
   }
 });
 
-app.get<{ Querystring: { buyer?: string; address?: string } }>("/api/standing-orders", async (request) => {
+app.get<{ Querystring: { buyer?: string; address?: string } }>("/v1/api/standing-orders", async (request) => {
   const buyer = (request.query.buyer ?? request.query.address ?? "").trim();
   if (!buyer) {
     return [];
@@ -468,7 +471,7 @@ app.get<{ Querystring: { buyer?: string; address?: string } }>("/api/standing-or
   return listBuyerStandingOrders(buyer);
 });
 
-app.get<{ Params: { address: string } }>("/api/standing-orders/:address", async (request, reply) => {
+app.get<{ Params: { address: string } }>("/v1/api/standing-orders/:address", async (request, reply) => {
   const buyer = request.params.address.trim();
   if (!buyer) {
     return reply.code(400).send({ error: "invalid_buyer_address" });
@@ -476,7 +479,7 @@ app.get<{ Params: { address: string } }>("/api/standing-orders/:address", async 
   return listBuyerStandingOrders(buyer);
 });
 
-app.get<{ Params: { shipmentId: string } }>("/api/metadata/:shipmentId", async (request) => {
+app.get<{ Params: { shipmentId: string } }>("/v1/api/metadata/:shipmentId", async (request) => {
   const rows = database.prepare(`
     SELECT metadata_key AS key, value, updated_at AS updatedAt
     FROM shipment_metadata WHERE shipment_id = ? ORDER BY metadata_key
@@ -485,7 +488,7 @@ app.get<{ Params: { shipmentId: string } }>("/api/metadata/:shipmentId", async (
 });
 
 app.put<{ Params: { shipmentId: string; key: string }; Body: { value?: unknown } }>(
-  "/api/metadata/:shipmentId/:key",
+  "/v1/api/metadata/:shipmentId/:key",
   {
     config: { rateLimit: { max: config.RATE_LIMIT_WRITE_MAX, timeWindow: config.RATE_LIMIT_WINDOW_MS } },
     schema: {
@@ -532,7 +535,7 @@ app.put<{ Params: { shipmentId: string; key: string }; Body: { value?: unknown }
   },
 );
 
-app.get<{ Querystring: { types?: string } }>("/api/stream", async (request, reply) => {
+app.get<{ Querystring: { types?: string } }>("/v1/api/stream", async (request, reply) => {
   const rawTypes = request.query.types;
   let typeFilter: Set<string> | null = null;
   if (rawTypes !== undefined && rawTypes !== "") {
@@ -584,7 +587,7 @@ function cacheSet(key: string, data: unknown, ttlMs: number): void {
 const TTL = { templates: 60_000, deadlines: 30_000, adminLog: 15_000 };
 
 // --- Issue #59: GET /api/templates ---
-app.get<{ Querystring: { owner?: string; nocache?: string } }>("/api/templates", async (request, reply) => {
+app.get<{ Querystring: { owner?: string; nocache?: string } }>("/v1/api/templates", async (request, reply) => {
   if (!config.STELLAR_CONTRACT_ID) {
     return reply.code(503).send({ error: "contract_not_configured" });
   }
@@ -608,7 +611,7 @@ app.get<{ Querystring: { owner?: string; nocache?: string } }>("/api/templates",
 });
 
 // --- Issue #60: GET /api/deadlines/upcoming ---
-app.get<{ Querystring: { withinLedgers?: string; nocache?: string } }>("/api/deadlines/upcoming", async (request, reply) => {
+app.get<{ Querystring: { withinLedgers?: string; nocache?: string } }>("/v1/api/deadlines/upcoming", async (request, reply) => {
   if (!config.STELLAR_CONTRACT_ID) {
     return reply.code(503).send({ error: "contract_not_configured" });
   }
@@ -635,7 +638,7 @@ app.get<{ Querystring: { withinLedgers?: string; nocache?: string } }>("/api/dea
 
 // --- Issue #61: GET /api/admin-log ---
 app.get<{ Querystring: { action?: string; fromLedger?: string; toLedger?: string; nocache?: string } }>(
-  "/api/admin-log",
+  "/v1/api/admin-log",
   async (request, reply) => {
     if (!config.METADATA_API_KEY || request.headers["x-api-key"] !== config.METADATA_API_KEY) {
       return reply.code(401).send({ error: "admin_log_unauthorized" });
@@ -674,6 +677,10 @@ function decodeScVal(value: xdr.ScVal): unknown {
  * the decoded native value. Returns null when the contract returns void/None.
  */
 async function simulateContractRead(fn: string, args: string[]): Promise<unknown> {
+  return contractCache.get(`${fn}:${args.join(",")}`, () => simulateContractReadUncached(fn, args));
+}
+
+async function simulateContractReadUncached(fn: string, args: string[]): Promise<unknown> {
   const { Account, Contract, TransactionBuilder, BASE_FEE, Networks, nativeToScVal } =
     await import("@stellar/stellar-sdk");
   const networkPassphrase = config.STELLAR_NETWORK === "mainnet" ? Networks.PUBLIC : Networks.TESTNET;
