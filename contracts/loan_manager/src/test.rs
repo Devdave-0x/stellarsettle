@@ -8,6 +8,8 @@ mod fuzz_tests;
 pub mod test_common;
 #[path = "test_flash_loan_guard.rs"]
 mod test_flash_loan_guard;
+#[path = "test_fz_interest.rs"]
+mod test_fz_interest;
 #[path = "test_lending.rs"]
 mod test_lending;
 #[path = "test_liquidation.rs"]
