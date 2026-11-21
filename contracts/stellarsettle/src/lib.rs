@@ -8329,6 +8329,11 @@ impl StellarSettleContract {
             panic!("invalid milestone index");
         }
 
+        let milestone = shipment.milestones.get(milestone_index).unwrap();
+        if milestone.status != MilestoneStatus::Pending {
+            panic!("milestone is not in pending status");
+        }
+
         let advance_key = DataKey::AdvanceRequest(shipment_id.clone(), milestone_index);
         let mut request: AdvanceRequest = env
             .storage()
@@ -21723,6 +21728,7 @@ pub mod constants;
 mod storage;
 mod test_arbiter_pool;
 mod test_arbiter_slashing;
+mod test_advance_payment_lifecycle;
 mod test_cancellation_reason;
 mod test_common;
 mod test_correct_proof;
