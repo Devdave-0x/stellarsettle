@@ -16571,13 +16571,20 @@ impl StellarSettleContract {
             constants::TTL_INITIAL_LEDGERS,
             constants::TTL_MAX_LEDGERS,
         );
+        let mut note_buf = [0u8; MAX_MILESTONE_NOTE_LEN as usize];
+        let note_len = note.len() as usize;
+        note.copy_into_slice(&mut note_buf[..note_len]);
+        let note_hash: BytesN<32> = env
+            .crypto()
+            .sha256(&soroban_sdk::Bytes::from_slice(&env, &note_buf[..note_len]))
+            .into();
         env.events().publish(
             (
                 Symbol::new(&env, "milestone_note_added"),
                 shipment_id,
                 milestone_index,
             ),
-            (caller, note),
+            (caller, note, note_hash),
         );
     }
 
@@ -21750,6 +21757,10 @@ mod test_top_up_escrow;
 // Disabled: require a pre-built stellarsettle.wasm under target/wasm32v1-none/release.
 // mod test_upgrade;
 mod test_buyer_spending_limit;
+mod test_rdj_admin_succession;
+mod test_rdj_governance_timelock;
+mod test_rdj_governance_quorum;
+mod test_rdj_milestone_note_event;
 mod test_dispute_mediator;
 mod test_emergency_freeze;
 mod test_event_schema;
