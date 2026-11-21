@@ -17,7 +17,7 @@ npm install
 npm run dev        # ts-node watch mode
 ```
 
-Set `STELLAR_CONTRACT_ID` to enable the event monitor. By default, it scans recent contract events on Testnet and persists `dispute_escalated`, `shipment_completed`, and `shipment_cancelled` events as well as metadata in a local SQLite database. The API exposes `GET /api/health`, `GET /api/events`, `GET /api/stream` (SSE), shipment endpoints, and metadata read/write endpoints. Metadata writes are disabled until a non-empty `METADATA_API_KEY` is configured; keep that key on the server and never expose it in frontend variables.
+Set `STELLAR_CONTRACT_ID` to enable the event monitor. By default, it scans recent contract events on Testnet and persists `dispute_escalated`, `shipment_completed`, and `shipment_cancelled` events as well as metadata in a local SQLite database. The API exposes `GET /api/health`, `GET /metrics` (Prometheus format: request counts, latency histograms, event-poll success/failure), `GET /api/events`, `GET /api/stream` (SSE), shipment endpoints, and metadata read/write endpoints. Metadata writes are disabled until a non-empty `METADATA_API_KEY` is configured; keep that key on the server and never expose it in frontend variables.
 
 The event monitor resumes from a SQLite checkpoint on restart and automatically backfills missed, retained ledgers. This service does not sign or submit contract transactions; the connected wallet remains responsible for user-authorized actions.
 
@@ -151,7 +151,19 @@ status, timestamps, dispute configuration, etc.).
 ### Metadata
 
 Off-chain key/value pairs attached to a shipment. Reads are public; writes
-require the `X-Api-Key` header matching `METADATA_API_KEY`.
+require an `X-Api-Key` header matching an active named API key. Each write is
+recorded in the `metadata_audit_log` table with the name of the key used.
+
+API keys are stored hashed in the `api_keys` table and can be revoked one at a time:
+
+```bash
+npx tsx src/apiKeysCli.ts create partner-a   # prints the new key once
+npx tsx src/apiKeysCli.ts revoke partner-a
+```
+
+Migration from a single `METADATA_API_KEY`: existing deployments keep working, because the
+configured `METADATA_API_KEY` is accepted as a key named `legacy`. Issue a named key per
+writer, move each writer over, then run `revoke legacy` and remove `METADATA_API_KEY`.
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
@@ -177,7 +189,7 @@ require the `X-Api-Key` header matching `METADATA_API_KEY`.
 - **GET /v1/api/admin-log** — Retrieve the on-chain admin action audit log (requires `X-API-Key` header)
   - Query params: `action` (optional action type filter), `fromLedger` (optional), `toLedger` (optional), `nocache` (any value bypasses cache)
   - Returns: `{ entries: AdminAction[], filters: { action, fromLedger, toLedger } }`
-  - Requires the same `METADATA_API_KEY` used for metadata writes
+  - Requires an active API key, the same as metadata writes
   - Proxies contract's `get_admin_log` or `get_admin_log_filtered` depending on filters provided
 
 ## Response Cache

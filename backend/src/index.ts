@@ -91,6 +91,7 @@ export function initDatabase(db: DatabaseSync): void {
 
 export const database = new DatabaseSync(databasePath);
 initDatabase(database);
+initApiKeys(database, config.METADATA_API_KEY);
 
 export type EscalationEvent = {
   id: string;
@@ -166,6 +167,7 @@ app.addHook("onRequest", async (request, reply) => {
 });
 
 app.addHook("onResponse", async (request, reply) => {
+  recordRequest(request.method, request.routeOptions.url ?? "unmatched", reply.statusCode, reply.elapsedTime);
   request.log.info({
     requestId: request.id,
     route: request.routeOptions.url,
@@ -535,7 +537,8 @@ app.put<{ Params: { shipmentId: string; key: string }; Body: { value?: unknown }
     },
   },
   async (request, reply) => {
-    if (!config.METADATA_API_KEY || request.headers["x-api-key"] !== config.METADATA_API_KEY) {
+    const apiKeyName = findApiKey(database, request.headers["x-api-key"]);
+    if (!apiKeyName) {
       return reply.code(401).send({ error: "metadata_write_unauthorized" });
     }
     const params = validateParams(metadataKeyParamSchema, request.params, reply);
@@ -550,6 +553,7 @@ app.put<{ Params: { shipmentId: string; key: string }; Body: { value?: unknown }
          DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
       )
       .run(params.shipmentId, params.key, body.value);
+    recordMetadataWrite(database, params.shipmentId, params.key, apiKeyName);
     return reply.code(204).send();
   },
 );
@@ -659,7 +663,7 @@ app.get<{ Querystring: { withinLedgers?: string; nocache?: string } }>("/v1/api/
 app.get<{ Querystring: { action?: string; fromLedger?: string; toLedger?: string; nocache?: string } }>(
   "/v1/api/admin-log",
   async (request, reply) => {
-    if (!config.METADATA_API_KEY || request.headers["x-api-key"] !== config.METADATA_API_KEY) {
+    if (!findApiKey(database, request.headers["x-api-key"])) {
       return reply.code(401).send({ error: "admin_log_unauthorized" });
     }
     if (!config.STELLAR_CONTRACT_ID) {
@@ -772,6 +776,7 @@ async function scanEvents(): Promise<void> {
       }
     }
     lastScannedLedger = latest.sequence;
+    recordPoll(true);
   } catch (error) {
     rpcHealthy = false;
     inc("rpc_errors_total");
