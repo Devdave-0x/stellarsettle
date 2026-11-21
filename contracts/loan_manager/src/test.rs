@@ -12,6 +12,12 @@ mod test_flash_loan_guard;
 mod test_fz_interest;
 #[path = "test_lending.rs"]
 mod test_lending;
+#[path = "test_jh_events.rs"]
+mod test_jh_events;
+#[path = "test_jh_liq_threshold.rs"]
+mod test_jh_liq_threshold;
+#[path = "test_jh_repay_release.rs"]
+mod test_jh_repay_release;
 #[path = "test_liquidation.rs"]
 mod test_liquidation;
 #[path = "test_loan_terms.rs"]
