@@ -8224,8 +8224,10 @@ impl StellarSettleContract {
             panic!("milestone percentages must sum to 100");
         }
 
+        let mut old_percents = Vec::new(&env);
         for i in 0..new_percents.len() {
             let mut m = shipment.milestones.get(i).unwrap();
+            old_percents.push_back(m.payment_percent);
             m.payment_percent = new_percents.get(i).unwrap();
             shipment.milestones.set(i, m);
         }
@@ -8239,7 +8241,7 @@ impl StellarSettleContract {
                 Symbol::new(&env, "milestones_rebalanced"),
                 shipment_id.clone(),
             ),
-            (buyer, new_percents),
+            (buyer, old_percents, new_percents),
         );
     }
 

@@ -2395,7 +2395,7 @@ Event name	Payload	When
 `dispute_evidence_submitted`	`(shipment_id)` topic, `(milestone_index, caller, evidence_hash, evidence_type)` data	Evidence submitted for a disputed milestone
 `escalation_threshold_set`	`threshold_ledgers`	Admin configured escalation threshold
 `shipment_cancelled`	`(shipment_id, refund_amount)`	Shipment cancelled
-`milestones_rebalanced`	`(buyer, new_percents)`	Buyer rebalanced milestone percentages
+`milestones_rebalanced`	`(shipment_id)` topic, `(buyer, old_percents, new_percents)` data	Buyer rebalanced milestone percentages
 `nft_hook_config_updated`	`(admin, enabled, ledger_sequence)`	Admin toggled the NFT mint hook via `set_nft_hook_enabled`
 `circuit_breaker_set`	`(limit, window_ledgers)`	Admin configured rate-limiting circuit breaker
 `long_hold_rebate_set`	`(threshold_ledgers, rebate_bps)`	Admin configured the long-hold escrow rebate
@@ -2419,7 +2419,7 @@ Event name Payload When
 `dispute_escalated` `(shipment_id)` topic, `(milestone_index, opened_ledger, current_ledger)` data Dispute open duration surpassed escalation threshold
 `escalation_threshold_set` `threshold_ledgers` Admin configured escalation threshold
 `shipment_cancelled` `(shipment_id, refund_amount)` Shipment cancelled
-`milestones_rebalanced` `(buyer, new_percents)` Buyer rebalanced milestone percentages
+`milestones_rebalanced` `(shipment_id)` topic, `(buyer, old_percents, new_percents)` data Buyer rebalanced milestone percentages
 `nft_hook_config_updated` `(admin, enabled, ledger_sequence)` Admin toggled the NFT mint hook via `set_nft_hook_enabled`
 `circuit_breaker_set` `(limit, window_ledgers)` Admin configured rate-limiting circuit breaker
 `nft_mint_hook` `(shipment_id)` topic, `(buyer, supplier, total_amount, ledger_sequence, metadata_hash)` data Final milestone completed while the NFT mint hook is enabled
