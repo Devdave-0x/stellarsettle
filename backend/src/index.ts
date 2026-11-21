@@ -19,6 +19,11 @@ import { migrateDatabase } from "./migrate.js";
 import { monitorConfig } from "./monitorConfig.js";
 import { isAllowedWebOrigin, webOriginsSchema } from "./webOrigins.js";
 import { inc, observeRequestDuration, renderMetrics } from "./metrics.js";
+import { ContractCache } from "./contractCache.js";
+import { registerWalletMutationRateLimit } from "./walletRateLimit.js";
+import { registerStellarSignatureAuth } from "./stellarSignatureAuth.js";
+import { registerShipmentPagination } from "./shipmentsPagination.js";
+import { registerHealthz } from "./healthz.js";
 import { globalAgent as httpAgent } from "node:http";
 import { globalAgent as httpsAgent } from "node:https";
 
@@ -148,6 +153,13 @@ let loanPollRunning = false;
 let rpcHealthy = false;
 
 await app.register(cors, { origin: config.WEB_ORIGIN, exposeHeaders: ["x-request-id"] });
+await registerWalletMutationRateLimit(app, {
+  max: config.RATE_LIMIT_WRITE_MAX,
+  timeWindow: config.RATE_LIMIT_WINDOW_MS,
+});
+registerStellarSignatureAuth(app);
+registerShipmentPagination(app, database);
+registerHealthz(app, () => rpcHealthy);
 
 app.addHook("onRequest", async (request, reply) => {
   reply.header("x-request-id", request.id);
