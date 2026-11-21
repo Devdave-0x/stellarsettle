@@ -18514,6 +18514,9 @@ impl StellarSettleContract {
         evidence_type: Symbol,
     ) {
         caller.require_auth();
+        if evidence_hash.len() == 0 {
+            panic!("evidence hash cannot be empty");
+        }
 
         let shipment = Self::get_shipment_internal(&env, &shipment_id);
 
@@ -21778,6 +21781,10 @@ mod test_pause_notice;
 mod test_expiry_extension;
 mod test_buyer_cap_collateral_merge;
 mod test_tier_max_value;
+mod test_valreb_mutual_preapproval;
+mod test_valreb_blacklist_appeal;
+mod test_valreb_finality_delay;
+mod test_valreb_dispute_evidence;
 mod test_buyer_vault;
 mod test_standing_orders;
 mod test_allowance_funding;
