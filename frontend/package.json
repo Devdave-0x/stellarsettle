@@ -35,7 +35,7 @@
     "@stellar/freighter-api": "^6.0.1",
     "@stellar/stellar-sdk": "^17.3.0",
     "i18next": "^27.2.2",
-    "lucide-react": "^1.61.0",
+    "lucide-react": "^1.76.0",
     "react": "^19.3.1",
     "react-dom": "^19.1.0"
   },
@@ -47,9 +47,9 @@
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^6.3.0",
     "jsdom": "^31.0.1",
-    "size-limit": "^11.1.6",
+    "size-limit": "^14.3.0",
     "typescript": "~7.0.2",
     "vite": "^8.3.8",
-    "vitest": "^5.0.5"
+    "vitest": "^5.1.1"
   }
 }
