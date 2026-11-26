@@ -16025,7 +16025,18 @@ impl StellarSettleContract {
         if payees.len() > 0 {
             let mut total: u32 = 0;
             for i in 0..payees.len() {
-                total += payees.get(i).unwrap().percent;
+                let payee = payees.get(i).unwrap();
+                if payee.percent == 0 {
+                    panic!("InvalidPayeePercentages");
+                }
+                for j in 0..i {
+                    if payees.get(j).unwrap().payee == payee.payee {
+                        panic!("DuplicatePayee");
+                    }
+                }
+                total = total
+                    .checked_add(payee.percent)
+                    .unwrap_or_else(|| panic!("InvalidPayeePercentages"));
             }
             if total != 100 {
                 panic!("InvalidPayeePercentages");
@@ -21796,6 +21807,8 @@ mod test_arbiter_repetition_guard;
 mod test_trade_proof;
 mod test_pause_notice;
 mod test_expiry_extension;
+#[path = "../tests/fuzz/milestone_payee_splits.rs"]
+mod test_milestone_payee_splits_fuzz;
 mod test_buyer_cap_collateral_merge;
 mod test_tier_max_value;
 mod test_valreb_mutual_preapproval;
