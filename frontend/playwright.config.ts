@@ -10,8 +10,39 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
-  use: { baseURL: "http://localhost:4173", headless: true, trace: "retain-on-failure" },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  expect: {
+    toHaveScreenshot: {
+      maxDiffPixelRatio: 0.01,
+      animations: "disabled",
+      caret: "hide",
+      scale: "css",
+    },
+  },
+  use: {
+    baseURL: "http://localhost:4173",
+    headless: true,
+    trace: "retain-on-failure",
+    viewport: { width: 1280, height: 720 },
+    deviceScaleFactor: 1,
+  },
+  projects: [
+    {
+      name: "chromium",
+      testIgnore: /visual\.spec\.ts$/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "visual",
+      testMatch: /visual\.spec\.ts$/,
+      snapshotPathTemplate:
+        "{testDir}/__screenshots__/{testFilePath}/{arg}{ext}",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1280, height: 720 },
+        deviceScaleFactor: 1,
+      },
+    },
+  ],
   webServer: {
     command: "npx vite build --mode e2e && npx vite preview --port 4173 --strictPort",
     url: "http://localhost:4173",

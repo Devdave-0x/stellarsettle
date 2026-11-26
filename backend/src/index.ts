@@ -2,6 +2,7 @@ import "dotenv/config";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import swagger from "@fastify/swagger";
+import { registerSchemaValidation } from "./schemaValidation.js";
 import swaggerUi from "@fastify/swagger-ui";
 import Fastify, { FastifyRequest, FastifyReply } from "fastify";
 import { DatabaseSync } from "node:sqlite";
@@ -14,12 +15,15 @@ import { scValToNative, rpc, xdr } from "@stellar/stellar-sdk";
 import { z } from "zod";
 import { EventMonitor } from "./eventMonitor.js";
 import { createCheckpointStore } from "./scanCheckpoint.js";
+import { migrateDatabase } from "./migrate.js";
 import { monitorConfig } from "./monitorConfig.js";
+import { isAllowedWebOrigin, webOriginsSchema } from "./webOrigins.js";
 import { inc, observeRequestDuration, renderMetrics } from "./metrics.js";
 import { ContractCache } from "./contractCache.js";
+import { registerWalletMutationRateLimit } from "./walletRateLimit.js";
+import { registerStellarSignatureAuth } from "./stellarSignatureAuth.js";
+import { registerShipmentPagination } from "./shipmentsPagination.js";
 import { registerHealthz } from "./healthz.js";
-import { registerMetadataApi } from "./metadataApi.js";
-import { createRpcCursorStore } from "./sorobanRpcCursor.js";
 import { globalAgent as httpAgent } from "node:http";
 import { globalAgent as httpsAgent } from "node:https";
 
@@ -57,7 +61,7 @@ const envSchema = z.object({
   POLL_INTERVAL_MS: z.coerce.number().int().min(1000).default(5000),
   DATABASE_PATH: z.string().default("./data/stellarsettle.sqlite"),
   METADATA_API_KEY: z.string().default(""),
-  WEB_ORIGIN: z.string().url().default("http://localhost:5173"),
+  WEB_ORIGIN: webOriginsSchema,
   // Issue #65: rate-limit env vars
   RATE_LIMIT_READ_MAX: z.coerce.number().int().positive().default(100),
   RATE_LIMIT_WRITE_MAX: z.coerce.number().int().positive().default(30),
@@ -72,29 +76,13 @@ if (databasePath !== ":memory:") {
 }
 
 export function initDatabase(db: DatabaseSync): void {
-  db.exec(`
-    PRAGMA journal_mode = WAL;
-    CREATE TABLE IF NOT EXISTS contract_events (
-      id TEXT PRIMARY KEY,
-      ledger INTEGER NOT NULL,
-      event_type TEXT NOT NULL,
-      shipment_id TEXT,
-      payload TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE INDEX IF NOT EXISTS contract_events_ledger_idx ON contract_events(ledger DESC);
-    CREATE TABLE IF NOT EXISTS shipment_metadata (
-      shipment_id TEXT NOT NULL,
-      metadata_key TEXT NOT NULL,
-      value TEXT NOT NULL,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (shipment_id, metadata_key)
-    );
-  `);
+  db.exec("PRAGMA journal_mode = WAL");
+  migrateDatabase(db);
 }
 
 export const database = new DatabaseSync(databasePath);
 initDatabase(database);
+initApiKeys(database, config.METADATA_API_KEY);
 
 export type EscalationEvent = {
   id: string;
@@ -111,6 +99,7 @@ const app = Fastify({
   requestIdHeader: "x-request-id",
   genReqId: (request) => request.headers["x-request-id"]?.toString() || randomUUID(),
 });
+registerSchemaValidation(app);
 const streams = new Set<(event: EscalationEvent) => void>();
 // Tracks the raw ServerResponse of every live SSE connection so onClose can drain them.
 const sseResponses = new Set<ServerResponse>();
@@ -168,14 +157,20 @@ let loanPollRunning = false;
 let rpcHealthy = false;
 
 await app.register(cors, { origin: config.WEB_ORIGIN, exposeHeaders: ["x-request-id"] });
+await registerWalletMutationRateLimit(app, {
+  max: config.RATE_LIMIT_WRITE_MAX,
+  timeWindow: config.RATE_LIMIT_WINDOW_MS,
+});
+registerStellarSignatureAuth(app);
+registerShipmentPagination(app, database);
 registerHealthz(app, () => rpcHealthy);
-registerMetadataApi(app, database, { apiKey: config.METADATA_API_KEY || undefined });
 
 app.addHook("onRequest", async (request, reply) => {
   reply.header("x-request-id", request.id);
 });
 
 app.addHook("onResponse", async (request, reply) => {
+  recordRequest(request.method, request.routeOptions.url ?? "unmatched", reply.statusCode, reply.elapsedTime);
   request.log.info({
     requestId: request.id,
     route: request.routeOptions.url,
@@ -411,6 +406,63 @@ const KNOWN_EVENT_TYPES = new Set([
   "shipment_completed",
   "shipment_cancelled",
 ]);
+app.get<{ Params: { shipmentId: string } }>("/v1/api/metadata/:shipmentId", async (request) => {
+  const rows = database.prepare(`
+    SELECT metadata_key AS key, value, updated_at AS updatedAt
+    FROM shipment_metadata WHERE shipment_id = ? ORDER BY metadata_key
+  `).all(request.params.shipmentId) as Array<{ key: string; value: string; updatedAt: string }>;
+  return Object.fromEntries(rows.map((row) => [row.key, { value: row.value, updatedAt: row.updatedAt }]));
+});
+
+app.put<{ Params: { shipmentId: string; key: string }; Body: { value?: unknown } }>(
+  "/v1/api/metadata/:shipmentId/:key",
+  {
+    config: { rateLimit: { max: config.RATE_LIMIT_WRITE_MAX, timeWindow: config.RATE_LIMIT_WINDOW_MS } },
+    schema: {
+      tags: ["metadata"],
+      summary: "Set a metadata key for a shipment (requires API key)",
+      security: [{ apiKey: [] }],
+      params: {
+        type: "object",
+        properties: {
+          shipmentId: { type: "string" },
+          key: { type: "string", pattern: "^[a-zA-Z0-9_-]{1,64}$" },
+        },
+        required: ["shipmentId", "key"],
+      },
+      body: {
+        type: "object",
+        required: ["value"],
+        properties: { value: { type: "string", maxLength: 4000 } },
+      },
+      response: {
+        204: { type: "null" },
+        400: { type: "object", properties: { error: { type: "string" } } },
+        401: { type: "object", properties: { error: { type: "string" } } },
+      },
+    },
+  },
+  async (request, reply) => {
+    const apiKeyName = findApiKey(database, request.headers["x-api-key"]);
+    if (!apiKeyName) {
+      return reply.code(401).send({ error: "metadata_write_unauthorized" });
+    }
+    const params = validateParams(metadataKeyParamSchema, request.params, reply);
+    if (!params) return;
+    const body = validateBody(metadataBodySchema, request.body, reply);
+    if (!body) return;
+    database
+      .prepare(
+        `INSERT INTO shipment_metadata (shipment_id, metadata_key, value, updated_at)
+         VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(shipment_id, metadata_key)
+         DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
+      )
+      .run(params.shipmentId, params.key, body.value);
+    recordMetadataWrite(database, params.shipmentId, params.key, apiKeyName);
+    return reply.code(204).send();
+  },
+);
 
 app.get<{ Querystring: { types?: string } }>("/v1/api/stream", async (request, reply) => {
   const rawTypes = request.query.types;
@@ -427,11 +479,14 @@ app.get<{ Querystring: { types?: string } }>("/v1/api/stream", async (request, r
 
   reply.hijack();
   const response = reply.raw;
+  const requestOrigin = request.headers.origin;
   response.writeHead(200, {
     "content-type": "text/event-stream",
     "cache-control": "no-cache, no-transform",
     connection: "keep-alive",
-    "access-control-allow-origin": config.WEB_ORIGIN,
+    ...(isAllowedWebOrigin(requestOrigin, config.WEB_ORIGIN)
+      ? { "access-control-allow-origin": requestOrigin }
+      : {}),
   });
   response.write(": connected\n\n");
   const writeEvent = (event: EscalationEvent) =>
@@ -517,7 +572,7 @@ app.get<{ Querystring: { withinLedgers?: string; nocache?: string } }>("/v1/api/
 app.get<{ Querystring: { action?: string; fromLedger?: string; toLedger?: string; nocache?: string } }>(
   "/v1/api/admin-log",
   async (request, reply) => {
-    if (!config.METADATA_API_KEY || request.headers["x-api-key"] !== config.METADATA_API_KEY) {
+    if (!findApiKey(database, request.headers["x-api-key"])) {
       return reply.code(401).send({ error: "admin_log_unauthorized" });
     }
     if (!config.STELLAR_CONTRACT_ID) {
@@ -584,6 +639,28 @@ async function scanEvents(): Promise<void> {
   try {
   await monitor.scan();
     rpcHealthy = true;
+    for (const event of response.events) {
+      const payload = decodeScVal(event.value) as Record<string, unknown>;
+      const shipmentId = String(payload.shipmentId ?? payload.shipment_id ?? "");
+      const escalation: EscalationEvent = {
+        id: event.id,
+        ledger: event.ledger,
+        type: "dispute_escalated",
+        shipmentId,
+        milestoneIndex: Number(payload.milestoneIndex ?? payload.milestone_index ?? 0),
+        openedLedger: Number(payload.openedLedger ?? payload.opened_ledger ?? event.ledger),
+        currentLedger: event.ledger,
+      };
+      database.prepare(`
+        INSERT OR IGNORE INTO contract_events (id, ledger, event_type, shipment_id, payload)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(escalation.id, escalation.ledger, escalation.type, shipmentId, JSON.stringify(escalation));
+      for (const stream of streams) {
+        stream(escalation);
+      }
+    }
+    lastScannedLedger = latest.sequence;
+    recordPoll(true);
   } catch (error) {
     rpcHealthy = false;
     inc("rpc_errors_total");
